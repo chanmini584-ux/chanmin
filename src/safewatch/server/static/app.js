@@ -114,10 +114,25 @@ function beep(n) {
 }
 
 // ------------------------------------------------------------------ cameras & jobs
+// Live views poll short-lived JPEG snapshots (~5 fps) instead of holding MJPEG connections open:
+// browsers allow only ~6 concurrent HTTP/1.1 connections per host, and long-lived streams for many
+// cameras would starve operator actions (ACK, report) of connections.
+function liveTick() {
+  document.querySelectorAll("img[data-live]").forEach((img) => {
+    if (img.dataset.busy === "1") return;
+    img.dataset.busy = "1";
+    const n = new Image();
+    n.onload = () => { img.src = n.src; img.dataset.busy = "0"; };
+    n.onerror = () => { img.dataset.busy = "0"; };
+    n.src = `/api/cameras/${img.dataset.live}/snapshot.jpg?t=${Date.now()}`;
+  });
+}
+setInterval(liveTick, 200);
+
 function renderCams() {
   $("#cams").innerHTML = ST.site.cameras.map((c) => `
     <div class="cam" id="cam-${c.id}" data-id="${c.id}">
-      <img data-src="/api/cameras/${c.id}/live.mjpg" alt="${esc(c.name)}" class="hidden">
+      <img alt="${esc(c.name)}" class="hidden">
       <div class="off">신호 없음 (분석 작업 없음)</div>
       <div class="label"><b>${c.id}</b> ${esc(c.name)}</div>
     </div>`).join("");
@@ -126,8 +141,8 @@ function renderCams() {
 function setCamLive(id, live) {
   const el = $(`#cam-${id}`); if (!el) return;
   const img = $("img", el), off = $(".off", el);
-  if (live && img.classList.contains("hidden")) { img.src = img.dataset.src + "?t=" + Date.now(); img.classList.remove("hidden"); off.classList.add("hidden"); }
-  if (!live && !img.classList.contains("hidden")) { img.removeAttribute("src"); img.classList.add("hidden"); off.classList.remove("hidden"); }
+  if (live && img.classList.contains("hidden")) { img.dataset.live = id; img.classList.remove("hidden"); off.classList.add("hidden"); }
+  if (!live && !img.classList.contains("hidden")) { delete img.dataset.live; img.removeAttribute("src"); img.classList.add("hidden"); off.classList.remove("hidden"); }
 }
 
 function highlightCams() {
@@ -196,11 +211,6 @@ function renderDetail(soft = false) {
         `<button data-dtab="${t}" class="${ST.dtab === t ? "active" : ""}">${{ overview: "개요", evidence: "판단 근거", report: "신고 지원" }[t]}</button>`).join("")}</div>
     </div>
     <div id="dbody"></div>`;
-  $("#aAck").onclick = async () => { await api(`/api/incidents/${d.id}/ack`, { method: "POST", body: { operator: operator() } }); loadDetail(d.id); };
-  $("#aReport").onclick = () => { ST.dtab = "report"; renderDetail(); };
-  $("#aDismiss").onclick = async () => { const r = prompt("종결 사유 (예: 상황 해소, 오탐)"); if (r !== null) { await api(`/api/incidents/${d.id}/dismiss`, { method: "POST", body: { reason: r, operator: operator() } }); loadDetail(d.id); } };
-  document.querySelectorAll("[data-fb]").forEach((b) => (b.onclick = async () => { await api(`/api/incidents/${d.id}/feedback`, { method: "POST", body: { label: b.dataset.fb, operator: operator() } }); loadDetail(d.id); }));
-  document.querySelectorAll("[data-dtab]").forEach((b) => (b.onclick = () => { ST.dtab = b.dataset.dtab; renderDetail(); }));
   const body = $("#dbody");
   if (ST.dtab === "overview") {
     body.innerHTML = overviewHTML(d, cams);
@@ -209,7 +219,6 @@ function renderDetail(soft = false) {
   }
   if (ST.dtab === "evidence") body.innerHTML = evidenceHTML(sits);
   if (ST.dtab === "report") return renderReport(d);
-  body.querySelectorAll("[data-vtab]").forEach((b) => (b.onclick = () => { ST.vtab = b.dataset.vtab; renderDetail(); }));
 }
 
 function playerHTML(d, cams) {
@@ -218,7 +227,7 @@ function playerHTML(d, cams) {
   const clip = d.clips?.[tab];
   let media;
   if (clip && clip.status === "ready") media = `<video controls autoplay muted src="/media/${esc(clip.path)}"></video><div class="muted small">사건 영상 (${clip.start_ts}s ~ ${clip.end_ts}s, 사건 전 버퍼 포함)</div>`;
-  else media = `<img src="/api/cameras/${tab}/live.mjpg?t=${Date.now()}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'muted small',textContent:'영상 없음 (클립 생성 전이거나 카메라 미연결)'}))"><div class="muted small">${clip ? "사건 영상 인코딩/녹화 중 — 실시간 영상 표시" : "실시간 영상"}</div>`;
+  else media = `<img data-live="${esc(tab)}" alt="실시간 영상"><div class="muted small">${clip ? "사건 영상 인코딩/녹화 중 — 실시간 영상 표시" : "실시간 영상 (분석 중인 카메라만 표시)"}</div>`;
   const sig = `${tab}|${clip ? clip.status : "live"}`;
   return `<div class="vtabs">${all.map((c) => `<button data-vtab="${c}" class="${c === tab ? "active" : ""}">${c}${d.clips?.[c]?.status === "ready" ? " 🎞" : ""}</button>`).join("")}</div><div class="player" data-sig="${esc(sig)}">${media}</div>`;
 }
@@ -273,6 +282,21 @@ function evidenceHTML(sits) {
         return `<div class="ev"><span class="k ${e.weight === null ? "gate" : neg ? "neg" : ""}">${kind}</span><span>${esc(e.text)}</span><span class="bar ${neg ? "neg" : ""}"><i style="width:${Math.round(e.strength * 100)}%"></i></span></div>`; }).join("")}
     </div>`).join("")}</div>`;
 }
+
+// Delegated click handling: the detail panel re-renders while an incident is live, so handlers are
+// attached once to the stable container instead of to individual (replaceable) buttons.
+document.getElementById("detail").addEventListener("click", async (e) => {
+  const d = ST.detail; if (!d) return;
+  const t = e.target.closest("button"); if (!t || t.disabled) return;
+  try {
+    if (t.id === "aAck") { await api(`/api/incidents/${d.id}/ack`, { method: "POST", body: { operator: operator() } }); loadDetail(d.id); }
+    else if (t.id === "aReport") { ST.dtab = "report"; renderDetail(); }
+    else if (t.id === "aDismiss") { const r = prompt("종결 사유 (예: 상황 해소, 오탐)"); if (r !== null) { await api(`/api/incidents/${d.id}/dismiss`, { method: "POST", body: { reason: r, operator: operator() } }); loadDetail(d.id); } }
+    else if (t.dataset.fb) { await api(`/api/incidents/${d.id}/feedback`, { method: "POST", body: { label: t.dataset.fb, operator: operator() } }); toastText(`피드백 기록: ${t.dataset.fb === "TP" ? "정탐" : "오탐"}`); loadDetail(d.id); }
+    else if (t.dataset.dtab) { ST.dtab = t.dataset.dtab; renderDetail(); }
+    else if (t.dataset.vtab) { ST.vtab = t.dataset.vtab; renderDetail(); }
+  } catch (err) { alert(err.message); }
+});
 
 // ------------------------------------------------------------------ report support
 async function renderReport(d) {

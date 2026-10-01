@@ -148,7 +148,8 @@ def _serve(args, autoplay: list[str] | None = None):
                 time.sleep(3.0)
         threading.Thread(target=play, daemon=True).start()
     print(f"\n  SafeWatch 대시보드:  http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}\n")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    # live MJPEG streams are long-lived; do not let them block shutdown
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning", timeout_graceful_shutdown=2)
 
 
 def cmd_serve(args):

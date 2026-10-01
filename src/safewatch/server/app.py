@@ -11,8 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import ROOT, load_policy, load_site
@@ -261,15 +261,17 @@ def create_app(runtime: Optional[Runtime] = None, **kw) -> FastAPI:
         p = rt.pipelines.get(cid)
         if not p or not p.latest_jpeg:
             raise HTTPException(404, "no live frame")
-        from fastapi.responses import Response
-        return Response(p.latest_jpeg, media_type="image/jpeg")
+        return Response(p.latest_jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/cameras/{cid}/live.mjpg")
-    async def live(cid: str):
+    async def live(cid: str, request: Request):
+        """MJPEG stream for external viewers (the dashboard itself polls snapshots)."""
         async def gen():
             last = None
             idle = 0
             while idle < 600:
+                if await request.is_disconnected():
+                    break
                 p = rt.pipelines.get(cid)
                 frame = p.latest_jpeg if p else None
                 if frame is not None and frame is not last:
