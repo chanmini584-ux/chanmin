@@ -1,0 +1,52 @@
+# 데모 관제구역 (가상). 실제 현장 적용 시 카메라·구역·위치 정보를 교체.
+site:
+  name: "데모 관제구역 (가상)"
+  timezone: "Asia/Seoul"
+cameras:
+  - id: cam01
+    name: "중앙로 보행로 A"
+    address: "가상시 중앙구 중앙로 101 앞"
+    lat: 37.50010
+    lon: 127.00010
+    place_type: street
+    image_right_bearing: 90        # 영상 오른쪽 = 동쪽
+    neighbors:                     # 카메라 토폴로지 (이동 방향 → 인접 카메라, 예상 이동시간 범위 s)
+      cam02: {exit_side: right, travel_s: [0.5, 25]}
+    analysis: {weapon: true}
+    zones: []
+    sim: {world: [0, 0, 20, 10]}
+  - id: cam02
+    name: "중앙로 보행로 B (어린이공원 인근)"
+    address: "가상시 중앙구 중앙로 131 앞"
+    lat: 37.50012
+    lon: 127.00045
+    place_type: park
+    image_right_bearing: 90
+    neighbors:
+      cam01: {exit_side: left, travel_s: [0.5, 25]}
+      cam03: {exit_side: right, travel_s: [0.5, 25]}
+    analysis: {weapon: true}
+    zones:
+      - id: cam02-watch
+        name: "어린이공원 앞 보행로"
+        type: loiter_watch
+        polygon: [[192, 150], [672, 150], [672, 540], [192, 540]]
+        active_hours: [21, 6]
+    sim: {world: [26, 0, 46, 10]}
+  - id: cam03
+    name: "공영주차장 관리구역 입구"
+    address: "가상시 중앙구 중앙로 161"
+    lat: 37.50015
+    lon: 127.00080
+    place_type: parking
+    image_right_bearing: 90
+    neighbors:
+      cam02: {exit_side: left, travel_s: [0.5, 25]}
+    analysis: {weapon: true}
+    zones:
+      - id: cam03-restricted
+        name: "관리구역 (야간 출입통제)"
+        type: restricted
+        polygon: [[600, 150], [960, 150], [960, 540], [600, 540]]
+        active_hours: [22, 6]
+    sim: {world: [52, 0, 72, 10]}

@@ -1,0 +1,101 @@
+# Risk Engine 정책 파일
+# ---------------------------------------------------------------------------
+# 이 파일의 모든 수치는 "초기 가설값"입니다. 최종 기준이 아닙니다.
+#  - features / situations : 증거(evidence) 정의용 파라미터 (물리량 기준: H = 사람 키, H/s)
+#  - levels                : 보정 점수 → 위험 단계 경계. `safewatch eval --fit-policy`가
+#                            검증 데이터의 PR 곡선에서 fit_targets를 만족하는 운영점으로 다시 계산합니다.
+#  - provenance            : 이 값들이 어디서 왔는지 기록 (hypothesis | fitted)
+provenance:
+  source: hypothesis
+  note: "초기 가설값. 실제 데이터 평가 후 fit-policy로 갱신해야 함"
+  fitted_on: null
+  fitted_at: null
+
+features:
+  depth_factor: 1.6          # 카메라별 site 설정(analysis.depth_factor)이 있으면 그 값 우선
+  run_speed: [1.2, 1.7]      # 달리기 소속도 ramp (H/s)
+  strike_limb_speed: [1.2, 2.2]
+  strike_reach_std: [0.06, 0.12]
+  strike_max_body_speed: [1.3, 0.8]   # 몸 이동속도가 클수록 타격 증거 감소 (달리기 팔 흔들림 배제)
+  contact_dist: [1.8, 1.0]   # 거리(H)가 작을수록 1
+  near_dist: [4.0, 1.8]
+  weapon_presence: [0.08, 0.25]
+  approach_speed: [0.3, 0.8] # 상대 방향 속도 성분 (H/s)
+  chase_alignment: [0.5, 0.85]
+
+situations:
+  ASSAULT:
+    base: 0.45               # 관문 증거만 있을 때 점수
+    window_s: 2.0
+    gate_fraction: [0.2, 0.6]   # 최근 window 중 타격 증거 비율
+    weights: {duration: 0.5, victim_fall: 0.7, flee_after: 0.4, weapon: 0.6}
+    duration_s: [2.0, 6.0]
+    max_level: EMERGENCY
+  WEAPON_THREAT:
+    base: 0.30
+    base_alone: 0.35         # 주변에 사람이 없을 때 (최대 ATTENTION으로 제한)
+    max_level_alone: ATTENTION
+    weights: {approach: 0.45, victim_flee: 0.6, contact: 0.5, strike: 0.8, chase: 0.6}
+    mitigation: {companion: 0.7}   # 반대 증거: 갈등 없이 함께 이동하는 일행
+    recent_s: 6.0
+    max_level: EMERGENCY
+  CHASE:
+    base: 0.25
+    window_s: 2.0
+    gate_fraction: [0.3, 0.8]
+    weights: {prior_conflict: 0.6, flee_onset: 0.5, weapon: 0.6, closing: 0.2}
+    mitigation: {companion: 0.7}
+    prior_s: 10.0
+    max_level: EMERGENCY
+  FALL:
+    base: 0.45
+    lying_s: [0.5, 2.0]
+    weights: {sudden: 0.35, long_lying: 0.5, motionless: 0.3, after_conflict: 0.6}
+    long_lying_s: [5.0, 20.0]
+    max_level: EMERGENCY
+  INTRUSION:
+    base: 0.45
+    dwell_s: [0.5, 3.0]
+    weights: {long_dwell: 0.4}
+    long_dwell_s: [10.0, 60.0]
+    max_level: HIGH_RISK
+  LOITERING:
+    base: 0.30
+    dwell_s: [40.0, 90.0]
+    weights: {path_ratio: 0.4, reversals: 0.4}
+    path_ratio: [3.0, 8.0]
+    reversals: [2, 6]
+    max_level: WARNING
+
+context:
+  night_hours: [22, 6]
+  night_factor: 1.15         # score' = 1 - (1 - score)^factor
+  place_factor: {street: 1.0, park: 1.1, school: 1.2, parking: 1.05}
+
+calibration:
+  method: identity           # identity | isotonic (fit-policy가 x/y 테이블을 채움)
+  x: []
+  y: []
+
+levels:                      # 보정 점수 하한 (가설값)
+  ATTENTION: 0.30
+  WARNING: 0.50
+  HIGH_RISK: 0.70
+  EMERGENCY: 0.85
+
+fit_targets:                 # 운영 정책 입력: 관제 측과 합의해야 하는 목표
+  ATTENTION: {min_recall: 0.95}
+  WARNING: {min_recall: 0.85}
+  HIGH_RISK: {min_precision: 0.90}
+  EMERGENCY: {min_precision: 0.97}
+
+alerting:
+  popup_min_level: WARNING   # 이 단계 이상만 관제자 팝업/소리 알림
+  decay_half_life_s: 4.0     # 점수 감쇠 (깜빡임 방지)
+
+incident:
+  merge_gap_s: 8.0
+  close_after_s: 12.0
+  pre_s: 8.0
+  post_s: 5.0
+  max_clip_s: 120.0

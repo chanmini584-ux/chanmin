@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafeWatch 관제 지원</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">SafeWatch <span>위험상황 관제 지원 (프로토타입)</span></div>
+  <nav class="tabs" id="viewTabs">
+    <button data-view="ops" class="active">관제</button>
+    <button data-view="kpi">대응 KPI</button>
+    <button data-view="eval">AI 성능 평가</button>
+  </nav>
+  <div class="top-right">
+    <button id="btnRun" class="btn primary">▶ 시나리오 재생</button>
+    <button id="btnSource" class="btn">영상/RTSP 연결</button>
+    <label class="toggle"><input type="checkbox" id="soundToggle"> 알림음</label>
+    <span id="wsState" class="ws off">연결 끊김</span>
+    <span id="clock" class="clock"></span>
+  </div>
+</header>
+
+<main id="view-ops" class="view ops">
+  <section class="queue panel">
+    <div class="panel-title">알림 큐 <span id="queueCount" class="muted"></span></div>
+    <div class="filters">
+      <label><input type="checkbox" id="fltAttention"> 관심(ATTENTION) 포함</label>
+      <label><input type="checkbox" id="fltClosed" checked> 종료 사건 포함</label>
+    </div>
+    <div id="queue" class="queue-list"></div>
+  </section>
+
+  <section class="center">
+    <div class="panel cams-panel">
+      <div class="panel-title">CCTV <span class="muted" id="siteName"></span></div>
+      <div id="cams" class="cams"></div>
+    </div>
+    <div class="panel jobs-panel">
+      <div class="panel-title">분석 작업</div>
+      <div id="jobs" class="jobs"></div>
+    </div>
+  </section>
+
+  <section class="detail panel" id="detail">
+    <div class="empty">왼쪽 알림 큐에서 사건을 선택하세요.<br><br>
+      <span class="muted">AI는 위험상황을 탐지·정리할 뿐이며, 최종 판단과 신고는 관제자가 합니다.</span></div>
+  </section>
+</main>
+
+<main id="view-kpi" class="view hidden">
+  <section class="panel wide">
+    <div class="panel-title">대응 시간 KPI <span class="muted">— 사건 발생 → 관제자 이해 → 신고 준비까지</span></div>
+    <div id="kpiSummary" class="kpi-cards"></div>
+    <div class="table-wrap"><table id="kpiTable" class="tbl"></table></div>
+    <p class="muted small">정의: 탐지 지연 = 상황 시작 추정 시각→사건 생성 · 알림 지연 = 상황 시작→관제자 알림 ·
+      인지 시간 = 알림→관제자 최초 열람 · 상황 파악 = 열람→확인(ACK) · 신고 준비 = 확인→신고정보 확정 ·
+      전체 대응 = 상황 시작→신고 완료 기록(없으면 확정). 운영자 정밀도 = 관제자 피드백 기준 정탐/(정탐+오탐).</p>
+  </section>
+</main>
+
+<main id="view-eval" class="view hidden">
+  <section class="panel wide" id="evalPanel"></section>
+</main>
+
+<div id="toasts" class="toasts"></div>
+
+<dialog id="dlgRun">
+  <form method="dialog" class="dlg">
+    <h3>시나리오 재생 (합성 CCTV)</h3>
+    <p class="muted small">모델·데이터 없이 전체 흐름을 시험하기 위한 가상 영상입니다. [정상]은 위험과 비슷한 정상 상황(오탐 시험용)입니다.</p>
+    <div id="scnList" class="scn-list"></div>
+    <label>재생 속도 <select id="scnSpeed"><option value="1">1x (실시간)</option><option value="2">2x</option><option value="4">4x</option></select></label>
+    <menu><button value="cancel" class="btn">닫기</button></menu>
+  </form>
+</dialog>
+
+<dialog id="dlgSource">
+  <form method="dialog" class="dlg" id="formSource">
+    <h3>실제 영상 / IP 카메라 연결</h3>
+    <p class="muted small">녹화 파일 경로 또는 RTSP URL (예: rtsp://user:pass@192.168.0.10:554/Streaming/Channels/102).
+      실제 인식 백엔드(YOLO pose + ByteTrack + COCO 객체)가 사용됩니다. 처음 실행 시 모델 가중치를 내려받습니다.</p>
+    <label>카메라 <select id="srcCam"></select></label>
+    <label>소스 <input id="srcPath" placeholder="/path/video.mp4 또는 rtsp://..." required></label>
+    <label>분석 FPS <input id="srcFps" type="number" value="5" min="1" max="15"></label>
+    <menu><button value="cancel" class="btn">취소</button><button id="srcStart" value="default" class="btn primary">연결 시작</button></menu>
+  </form>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
